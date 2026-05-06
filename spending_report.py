@@ -439,19 +439,36 @@ def send_email(subject, html_body):
 # MAIN
 # ─────────────────────────────────────────────
 
-def main():
+def get_sentinel_path():
+    """Path to the file that marks this week's report as sent."""
+    today = date.today()
+    year, week, _ = today.isocalendar()
+    return f"/tmp/spending_report_{year}_W{week:02d}.done"
+
+def main(force=False):
+    sentinel = get_sentinel_path()
+
+    # Catch-up mode: only run on Mondays if not already sent this week
+    if not force:
+        if date.today().weekday() != 0:
+            print("Not Monday, skipping.")
+            return
+        if os.path.exists(sentinel):
+            print("Report already sent this week, skipping.")
+            return
+
     print("📡 Fetching Notion data...")
     raw_pages = fetch_all_transactions()
     transactions = [t for p in raw_pages if (t := parse_transaction(p)) is not None]
     print(f"   {len(transactions)} transactions loaded")
-    
+
     week_start, week_end = get_last_week_range()
     print(f"📅 Report week: {week_start} → {week_end}")
-    
+
     weekly_totals = get_weekly_totals(transactions, week_start, week_end)
     historical_avg = compute_historical_averages(transactions, week_start, week_end)
     trend_data = compute_trend_data(transactions, num_weeks=6)
-    
+
     html = build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data)
 
     subject = f"💰 Weekly Spending · {week_start.strftime('%b %d')}–{week_end.strftime('%b %d')}"
@@ -459,5 +476,10 @@ def main():
     print("📧 Sending email...")
     send_email(subject, html)
 
+    # Mark this week as sent
+    with open(sentinel, "w") as f:
+        f.write(datetime.now().isoformat())
+
 if __name__ == "__main__":
-    main()
+    import sys
+    main(force="--force" in sys.argv)

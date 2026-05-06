@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.haochenjoyce.weeklyspending.catchup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/joyceyu/Documents/notion_weekly_report/.venv/bin/python3</string>
+        <string>/Users/joyceyu/Documents/notion_weekly_report/spending_report.py</string>
+    </array>
+
+    <!-- Run every hour; on Monday, sends if not already sent this week -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/spending_report_catchup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/spending_report_catchup_error.log</string>
+
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>

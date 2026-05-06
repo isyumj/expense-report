@@ -9,15 +9,16 @@
     <array>
         <string>/Users/joyceyu/Documents/notion_weekly_report/.venv/bin/python3</string>
         <string>/Users/joyceyu/Documents/notion_weekly_report/spending_report.py</string>
+        <string>--force</string>
     </array>
 
-    <!-- Run every Monday at 9:00 AM -->
+    <!-- Run every Monday at 10:00 AM -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
         <integer>1</integer>
         <key>Hour</key>
-        <integer>9</integer>
+        <integer>10</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
