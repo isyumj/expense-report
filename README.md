@@ -51,8 +51,10 @@ FIELD_DESCRIPTION = "Description"
 
 ## 四、测试运行
 
+> **手动运行前需要先激活虚拟环境：**
+
 ```bash
-cd ~/spending_report
+source ~/Documents/notion_weekly_report/.venv/bin/activate
 python3 spending_report.py
 ```
 

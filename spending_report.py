@@ -6,21 +6,14 @@ Run every Monday at 9am via launchd.
 """
 
 import os
-import json
 import smtplib
-import base64
-import io
 from datetime import datetime, timedelta, date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
 from collections import defaultdict
 import statistics
 
 import requests
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 
 # load .env if present
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -209,83 +202,90 @@ def compute_trend_data(transactions, num_weeks=6):
     return weeks
 
 # ─────────────────────────────────────────────
-# CHART GENERATORS
+# HTML/CSS CHART BUILDERS
 # ─────────────────────────────────────────────
 
-def generate_pie_chart(weekly_totals):
-    """Generate pie chart as base64 PNG."""
-    categories = [k for k, v in weekly_totals.items() if v > 0]
-    values = [weekly_totals[k] for k in categories]
-    colors = [CATEGORY_COLORS.get(k, "#cccccc") for k in categories]
-    
-    fig = go.Figure(data=[go.Pie(
-        labels=categories,
-        values=values,
-        marker=dict(colors=colors, line=dict(color='#ffffff', width=2)),
-        textinfo='label+percent',
-        textfont=dict(size=13, family="Georgia"),
-        hole=0.35,
-        pull=[0.03] * len(categories),
-    )])
-    
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        showlegend=False,
-        margin=dict(t=10, b=10, l=10, r=10),
-        width=480,
-        height=380,
-    )
-    
-    img_bytes = fig.to_image(format="png", scale=2)
-    return base64.b64encode(img_bytes).decode()
+def build_spending_breakdown_html(weekly_totals):
+    """Build HTML/CSS spending breakdown: stacked bar + category rows."""
+    total = sum(v for v in weekly_totals.values() if v > 0)
+    if total == 0:
+        return '<p style="color:#aaa;text-align:center;padding:20px 0;">No spending this week</p>'
 
-def generate_trend_chart(trend_data):
-    """Generate 6-week trend line chart as base64 PNG."""
-    # Only show top categories by total spend
-    all_cats = defaultdict(float)
-    for week in trend_data:
-        for cat, val in week["totals"].items():
-            all_cats[cat] += val
-    
-    top_cats = sorted(all_cats, key=all_cats.get, reverse=True)
-    # Exclude Housing from trend (too dominant, fixed cost)
-    trend_cats = [c for c in top_cats if c != "Housing"][:5]
-    
-    labels = [w["label"] for w in trend_data]
-    
-    fig = go.Figure()
-    for cat in trend_cats:
-        vals = [w["totals"].get(cat, 0) for w in trend_data]
-        fig.add_trace(go.Scatter(
-            x=labels,
-            y=vals,
-            name=cat,
-            mode='lines+markers',
-            line=dict(color=CATEGORY_COLORS.get(cat, "#999"), width=2.5),
-            marker=dict(size=7),
-        ))
-    
-    fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(248,247,244,0.8)',
-        font=dict(family="Georgia", size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(gridcolor='#e8e8e8', showline=False),
-        yaxis=dict(gridcolor='#e8e8e8', showline=False, tickprefix="$"),
-        margin=dict(t=40, b=20, l=50, r=20),
-        width=640,
-        height=300,
+    sorted_cats = sorted(
+        [(cat, amt) for cat, amt in weekly_totals.items() if amt > 0],
+        key=lambda x: -x[1],
     )
-    
-    img_bytes = fig.to_image(format="png", scale=2)
-    return base64.b64encode(img_bytes).decode()
+
+    # Stacked proportional bar
+    stacked_cells = ""
+    for cat, amt in sorted_cats:
+        pct = (amt / total) * 100
+        color = CATEGORY_COLORS.get(cat, "#ccc")
+        stacked_cells += f'<td style="background:{color};width:{pct:.2f}%;height:16px;padding:0;" title="{cat}: ${amt:.2f}"></td>'
+
+    # Individual category rows with bar + amount + %
+    max_amt = sorted_cats[0][1]
+    rows = ""
+    for cat, amt in sorted_cats:
+        pct_total = (amt / total) * 100
+        bar_pct = (amt / max_amt) * 100
+        empty_pct = 100 - bar_pct
+        color = CATEGORY_COLORS.get(cat, "#ccc")
+        emoji = CATEGORY_EMOJI.get(cat, "")
+        rows += f"""
+        <tr>
+          <td style="padding:7px 14px 7px 0;font-size:13px;white-space:nowrap;color:#4a4540;width:140px;vertical-align:middle;">{emoji} {cat}</td>
+          <td style="padding:7px 0;vertical-align:middle;">
+            <table style="width:100%;border-collapse:collapse;"><tr>
+              <td style="background:{color};width:{bar_pct:.2f}%;height:12px;padding:0;border-radius:6px 0 0 6px;"></td>
+              <td style="background:#f0ede6;width:{empty_pct:.2f}%;height:12px;padding:0;border-radius:0 6px 6px 0;"></td>
+            </tr></table>
+          </td>
+          <td style="padding:7px 0 7px 14px;font-size:14px;font-weight:600;text-align:right;white-space:nowrap;color:#2c2a26;width:80px;">${amt:,.2f}</td>
+          <td style="padding:7px 0 7px 8px;font-size:11px;color:#888;text-align:right;white-space:nowrap;width:40px;">{pct_total:.1f}%</td>
+        </tr>"""
+
+    return f"""
+    <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;margin-bottom:16px;"><tr>{stacked_cells}</tr></table>
+    <table style="width:100%;border-collapse:collapse;">{rows}</table>"""
+
+
+def build_trend_chart_html(trend_data):
+    """Build HTML/CSS 6-week total spend bar chart (Housing excluded)."""
+    weeks = []
+    for w in trend_data:
+        total = sum(v for cat, v in w["totals"].items() if cat != "Housing")
+        weeks.append({"label": w["label"], "total": total})
+
+    max_total = max((w["total"] for w in weeks), default=1) or 1
+    chart_height = 100  # px, max bar height
+
+    bar_cells = ""
+    date_cells = ""
+    for i, w in enumerate(weeks):
+        bar_h = max(int((w["total"] / max_total) * chart_height), 2)
+        is_latest = (i == len(weeks) - 1)
+        bar_color = "#9B8EC4" if is_latest else "#C4B8E8"
+        bar_cells += f"""
+        <td style="text-align:center;vertical-align:bottom;padding:0 5px;height:{chart_height + 24}px;">
+          <div style="font-size:11px;color:#777;margin-bottom:4px;">${w["total"]:,.0f}</div>
+          <div style="background:{bar_color};height:{bar_h}px;border-radius:4px 4px 0 0;margin:0 auto;width:36px;"></div>
+        </td>"""
+        date_cells += f'<td style="text-align:center;padding:5px 5px 0;font-size:11px;color:#888;">{w["label"]}</td>'
+
+    return f"""
+    <table style="width:100%;border-collapse:collapse;border-bottom:2px solid #e0ddd6;">
+      <tr>{bar_cells}</tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>{date_cells}</tr>
+    </table>"""
 
 # ─────────────────────────────────────────────
 # EMAIL HTML BUILDER
 # ─────────────────────────────────────────────
 
-def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data, pie_b64, trend_b64):
+def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data):
     week_label = f"{week_start.strftime('%b %d')} – {week_end.strftime('%b %d, %Y')}"
     total_spend = sum(weekly_totals.values())
     
@@ -352,8 +352,9 @@ def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body style="margin:0;padding:0;background:#f0ede6;font-family:Georgia,serif;">
+<body style="margin:0;padding:0;background:#f0ede6;font-family:'DM Sans',sans-serif;">
 
 <div style="max-width:680px;margin:32px auto;background:#fdfcf9;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
@@ -393,16 +394,16 @@ def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_
     </table>
   </div>
 
-  <!-- PIE CHART -->
-  <div style="padding:32px 40px 0;text-align:center;">
-    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;text-align:left;">🥧 Spending Breakdown</div>
-    <img src="cid:pie_chart" style="width:100%;max-width:480px;display:block;margin:0 auto;">
+  <!-- SPENDING BREAKDOWN -->
+  <div style="padding:32px 40px 0;">
+    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;">🥧 Spending Breakdown</div>
+    {build_spending_breakdown_html(weekly_totals)}
   </div>
 
   <!-- TREND CHART -->
-  <div style="padding:24px 40px 0;text-align:center;">
-    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;text-align:left;">📈 6-Week Trend <span style="font-size:9px;color:#ccc;">(Housing excluded)</span></div>
-    <img src="cid:trend_chart" style="width:100%;display:block;margin:0 auto;">
+  <div style="padding:24px 40px 0;">
+    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;">📈 6-Week Trend <span style="font-size:9px;color:#ccc;">(Housing excluded)</span></div>
+    {build_trend_chart_html(trend_data)}
   </div>
 
   <!-- FOOTER -->
@@ -421,28 +422,17 @@ def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_
 # EMAIL SENDER
 # ─────────────────────────────────────────────
 
-def send_email(subject, html_body, pie_b64, trend_b64):
-    msg = MIMEMultipart("related")
+def send_email(subject, html_body):
+    msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = GMAIL_SENDER
     msg["To"] = ", ".join(RECIPIENTS)
-    
-    alt = MIMEMultipart("alternative")
-    msg.attach(alt)
-    alt.attach(MIMEText(html_body, "html", "utf-8"))
-    
-    # Attach charts as inline images
-    for cid, b64data in [("pie_chart", pie_b64), ("trend_chart", trend_b64)]:
-        img_data = base64.b64decode(b64data)
-        img = MIMEImage(img_data, "png")
-        img.add_header("Content-ID", f"<{cid}>")
-        img.add_header("Content-Disposition", "inline")
-        msg.attach(img)
-    
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
         server.sendmail(GMAIL_SENDER, RECIPIENTS, msg.as_string())
-    
+
     print(f"✅ Report sent to {RECIPIENTS}")
 
 # ─────────────────────────────────────────────
@@ -462,16 +452,12 @@ def main():
     historical_avg = compute_historical_averages(transactions, week_start, week_end)
     trend_data = compute_trend_data(transactions, num_weeks=6)
     
-    print("🎨 Generating charts...")
-    pie_b64 = generate_pie_chart(weekly_totals)
-    trend_b64 = generate_trend_chart(trend_data)
-    
-    html = build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data, pie_b64, trend_b64)
-    
+    html = build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data)
+
     subject = f"💰 Weekly Spending · {week_start.strftime('%b %d')}–{week_end.strftime('%b %d')}"
-    
+
     print("📧 Sending email...")
-    send_email(subject, html, pie_b64, trend_b64)
+    send_email(subject, html)
 
 if __name__ == "__main__":
     main()
