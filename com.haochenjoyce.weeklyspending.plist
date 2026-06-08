@@ -9,7 +9,6 @@
     <array>
         <string>/Users/joyceyu/Documents/notion_weekly_report/.venv/bin/python3</string>
         <string>/Users/joyceyu/Documents/notion_weekly_report/spending_report.py</string>
-        <string>--force</string>
     </array>
 
     <!-- Run every Monday at 10:00 AM -->

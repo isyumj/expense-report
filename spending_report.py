@@ -35,6 +35,9 @@ GMAIL_SENDER = os.environ["GMAIL_SENDER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 RECIPIENTS = os.environ["RECIPIENTS"].split(",")
 
+# Earliest hour (local time) the Monday report may be sent.
+TARGET_HOUR = 10
+
 # Notion field names — adjust if yours differ
 FIELD_DATE = "Date"
 FIELD_AMOUNT = "Amount"
@@ -130,19 +133,22 @@ def parse_transaction(page):
             return None
         amount = float(amount_raw)
         
-        # Type (select)
+        # Type (select) — a blank Type falls back to "Others", but we
+        # flag it so untagged spending can be spotted and fixed in Notion.
         type_obj = props[FIELD_TYPE]["select"]
+        untyped = type_obj is None
         category = type_obj["name"] if type_obj else "Others"
-        
+
         # Description
         desc_list = props[FIELD_DESCRIPTION]["title"]
         description = desc_list[0]["plain_text"] if desc_list else ""
-        
+
         return {
             "date": txn_date,
             "amount": amount,
             "category": category,
             "description": description,
+            "untyped": untyped,
         }
     except (KeyError, TypeError, ValueError):
         return None
@@ -448,10 +454,15 @@ def get_sentinel_path():
 def main(force=False):
     sentinel = get_sentinel_path()
 
-    # Catch-up mode: only run on Mondays if not already sent this week
+    # Catch-up mode: only run on Mondays, at/after the target hour,
+    # and only if not already sent this week.
     if not force:
-        if date.today().weekday() != 0:
+        now = datetime.now()
+        if now.weekday() != 0:
             print("Not Monday, skipping.")
+            return
+        if now.hour < TARGET_HOUR:
+            print(f"Before {TARGET_HOUR}:00, skipping.")
             return
         if os.path.exists(sentinel):
             print("Report already sent this week, skipping.")
@@ -464,6 +475,17 @@ def main(force=False):
 
     week_start, week_end = get_last_week_range()
     print(f"📅 Report week: {week_start} → {week_end}")
+
+    # Flag untyped transactions in the report week — these inflate "Others".
+    untyped = [
+        t for t in transactions
+        if t.get("untyped") and week_start <= t["date"] <= week_end
+    ]
+    if untyped:
+        untyped_total = sum(t["amount"] for t in untyped)
+        print(f"⚠️  {len(untyped)} untyped txn(s) counted in Others (${untyped_total:,.2f}):")
+        for t in untyped:
+            print(f"     {t['date']}  ${t['amount']:>8,.2f}  {t['description']}")
 
     weekly_totals = get_weekly_totals(transactions, week_start, week_end)
     historical_avg = compute_historical_averages(transactions, week_start, week_end)
