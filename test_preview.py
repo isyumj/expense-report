@@ -24,7 +24,7 @@ for _k in ("NOTION_TOKEN", "NOTION_DATABASE_ID"):
 
 from spending_report import (
     CATEGORY_COLORS,
-    get_weekly_totals, compute_historical_averages, compute_trend_data,
+    get_weekly_totals, compute_historical_averages, compute_monthly_trend_data,
     build_html_email, send_email,
 )
 
@@ -119,7 +119,7 @@ def main():
 
     weekly_totals   = get_weekly_totals(transactions, week_start, week_end)
     historical_avg  = compute_historical_averages(transactions, week_start, week_end)
-    trend_data      = compute_trend_data(transactions, num_weeks=6)
+    trend_data      = compute_monthly_trend_data(transactions, num_months=6)
 
     print("📄 Building HTML…")
     html = build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data)

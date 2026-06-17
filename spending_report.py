@@ -192,20 +192,42 @@ def compute_historical_averages(transactions, exclude_start, exclude_end, num_we
             averages[cat] = statistics.mean(vals)
     return averages
 
-def compute_trend_data(transactions, num_weeks=6):
-    """Get per-category totals for the last N weeks (for trend chart)."""
-    today = date.today()
-    last_monday = today - timedelta(days=today.weekday() + 7)
-    
-    weeks = []
-    for w in range(num_weeks - 1, -1, -1):
-        week_start = last_monday - timedelta(weeks=w)
-        week_end = week_start + timedelta(days=6)
-        label = f"{week_start.strftime('%m/%d')}"
-        totals = get_weekly_totals(transactions, week_start, week_end)
-        weeks.append({"label": label, "totals": totals, "start": week_start})
-    
-    return weeks
+def get_monthly_total(transactions, year, month):
+    """Sum all transactions (every category, Housing included) in a calendar month."""
+    total = 0.0
+    for txn in transactions:
+        if txn["date"].year == year and txn["date"].month == month:
+            total += txn["amount"]
+    return total
+
+def _add_months(year, month, delta):
+    """Return (year, month) shifted by delta months, handling rollover."""
+    idx = (year * 12 + (month - 1)) + delta
+    return idx // 12, idx % 12 + 1
+
+def compute_monthly_trend_data(transactions, num_months=6):
+    """
+    Monthly total spend (Housing included) for the last N complete months.
+
+    The latest month is the most recent fully-completed calendar month relative
+    to the report week:
+      - if last week spans two months -> the earlier month (上个月), excluding 本月
+      - if last week is within one month M -> the month before M
+    """
+    mon, sun = get_last_week_range()
+    if mon.month != sun.month:
+        latest_year, latest_month = mon.year, mon.month
+    else:
+        latest_year, latest_month = _add_months(mon.year, mon.month, -1)
+
+    months = []
+    for back in range(num_months - 1, -1, -1):
+        y, m = _add_months(latest_year, latest_month, -back)
+        label = date(y, m, 1).strftime("%b")
+        total = get_monthly_total(transactions, y, m)
+        months.append({"label": label, "total": total, "year": y, "month": m})
+
+    return months
 
 # ─────────────────────────────────────────────
 # HTML/CSS CHART BUILDERS
@@ -256,21 +278,18 @@ def build_spending_breakdown_html(weekly_totals):
     <table style="width:100%;border-collapse:collapse;">{rows}</table>"""
 
 
-def build_trend_chart_html(trend_data):
-    """Build HTML/CSS 6-week total spend bar chart (Housing excluded)."""
-    weeks = []
-    for w in trend_data:
-        total = sum(v for cat, v in w["totals"].items() if cat != "Housing")
-        weeks.append({"label": w["label"], "total": total})
+def build_monthly_trend_chart_html(trend_data):
+    """Build HTML/CSS 6-month total spend bar chart (Housing included)."""
+    months = [{"label": m["label"], "total": m["total"]} for m in trend_data]
 
-    max_total = max((w["total"] for w in weeks), default=1) or 1
+    max_total = max((m["total"] for m in months), default=1) or 1
     chart_height = 100  # px, max bar height
 
     bar_cells = ""
     date_cells = ""
-    for i, w in enumerate(weeks):
+    for i, w in enumerate(months):
         bar_h = max(int((w["total"] / max_total) * chart_height), 2)
-        is_latest = (i == len(weeks) - 1)
+        is_latest = (i == len(months) - 1)
         bar_color = "#9B8EC4" if is_latest else "#C4B8E8"
         bar_cells += f"""
         <td style="text-align:center;vertical-align:bottom;padding:0 5px;height:{chart_height + 24}px;">
@@ -408,8 +427,8 @@ def build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_
 
   <!-- TREND CHART -->
   <div style="padding:24px 40px 0;">
-    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;">📈 6-Week Trend <span style="font-size:9px;color:#ccc;">(Housing excluded)</span></div>
-    {build_trend_chart_html(trend_data)}
+    <div style="font-size:10px;letter-spacing:3px;color:#b0a898;text-transform:uppercase;margin-bottom:16px;">📈 6-Month Trend</div>
+    {build_monthly_trend_chart_html(trend_data)}
   </div>
 
   <!-- FOOTER -->
@@ -489,7 +508,7 @@ def main(force=False):
 
     weekly_totals = get_weekly_totals(transactions, week_start, week_end)
     historical_avg = compute_historical_averages(transactions, week_start, week_end)
-    trend_data = compute_trend_data(transactions, num_weeks=6)
+    trend_data = compute_monthly_trend_data(transactions, num_months=6)
 
     html = build_html_email(week_start, week_end, weekly_totals, historical_avg, trend_data)
 

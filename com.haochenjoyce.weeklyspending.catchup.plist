@@ -7,8 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/joyceyu/Documents/notion_weekly_report/.venv/bin/python3</string>
-        <string>/Users/joyceyu/Documents/notion_weekly_report/spending_report.py</string>
+        <string>/Users/joyceyu/Developer/notion_weekly_report/.venv/bin/python3</string>
+        <string>/Users/joyceyu/Developer/notion_weekly_report/spending_report.py</string>
     </array>
 
     <!-- Run every hour; on Monday, sends if not already sent this week -->
